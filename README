@@ -1,0 +1,24 @@
+
+About
+---------
+
+node.js addon for cassandra
+
+API inspired by ruby cassandra library
+
+Install
+---------
+
+  npm install cassandra
+
+Usage
+---------
+
+
+
+Todo
+---------
+
+login
+batch_mutate
+server auto discovery
