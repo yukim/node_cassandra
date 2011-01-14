@@ -9,16 +9,15 @@ API inspired by ruby cassandra library
 Install
 ---------
 
-  npm install cassandra
+TODO
 
 Usage
 ---------
 
-
+TODO
 
 Todo
 ---------
 
-login
-batch_mutate
-server auto discovery
+* get_range_slice
+* get_index_slice
