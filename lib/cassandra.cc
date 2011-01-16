@@ -17,6 +17,98 @@ using namespace apache::thrift::protocol;
 using namespace apache::thrift::transport;
 using namespace org::apache::cassandra;
 
+/** helper functions **/
+
+SlicePredicate createSlicePredicate(
+    const vector<string> &columns,
+    const map<string, string> &options)
+{
+    SlicePredicate slice;
+    if (!columns.empty())
+    {
+        slice.column_names = columns;
+        slice.__isset.column_names = true;
+    }
+    else if (!options.empty())
+    {
+        map<string, string> opts = options;
+        slice.slice_range.start = opts["start"];
+        slice.slice_range.finish = opts["finish"];
+        if ("true" == opts["reversed"])
+        {
+            slice.slice_range.reversed = true;
+        }
+        if (!opts["limit"].empty())
+        {
+            slice.slice_range.count = atoi(opts["limit"].c_str());
+        }
+        slice.__isset.slice_range = true;
+    }
+    else
+    {
+        slice.slice_range.start = "";
+        slice.slice_range.finish = "";
+        slice.__isset.slice_range = true;
+    }
+    return slice;
+}
+
+Column createColumn(const std::string &name, const std::string &value)
+{
+    Column col;
+    col.name = name;
+    col.value = value;
+    col.timestamp = Timestamp::Now();
+
+    return col;
+}
+
+ColumnParent createColumnParent(
+    const string &column_family,
+    const string &super_column_name)
+{
+    ColumnParent cp;
+    cp.column_family.assign(column_family);
+    if (!super_column_name.empty()) 
+    {
+        cp.super_column.assign(super_column_name);
+        cp.__isset.super_column= true;
+    }
+    return cp;
+}
+
+void value2string(string &ret, Handle<Value> value)
+{
+    if (!value->IsUndefined() && !value->IsNull())
+    {
+        String::Utf8Value str(value);
+        ret.assign(*str);
+    }
+    else
+    {
+        ret.assign("");
+    }
+}
+
+void makeOptions(map<string, string> &options, Handle<Object> obj)
+{
+    string start;
+    value2string(start, obj->Get(String::NewSymbol("start")));
+    options["start"] = start;
+    string finish;
+    value2string(finish, obj->Get(String::NewSymbol("finish")));
+    options["finish"] = finish;
+    string reversed;
+    value2string(reversed, obj->Get(String::NewSymbol("reversed")));
+    options["reversed"] = reversed;
+    string limit;
+    value2string(limit, obj->Get(String::NewSymbol("limit")));
+    options["limit"] = limit;
+    string cl;
+    value2string(cl, obj->Get(String::NewSymbol("consistency_level")));
+    options["consistency_level"] = cl;
+}
+
 void Client::Initialize(Handle<Object> target)
 {
     HandleScope scope;
@@ -25,6 +117,7 @@ void Client::Initialize(Handle<Object> target)
     t->SetClassName(v8::String::New("Client"));
     t->InstanceTemplate()->SetInternalFieldCount(1);
 
+    // methods
     // Client.prototype.login
     NODE_SET_PROTOTYPE_METHOD(t, "login", Login);
 
@@ -40,10 +133,13 @@ void Client::Initialize(Handle<Object> target)
     NODE_SET_PROTOTYPE_METHOD(t, "insert", Insert);
     // Client.prototype.remove
     NODE_SET_PROTOTYPE_METHOD(t, "remove", Remove);
+    // Client.prototype.consistencyLevel
+    NODE_SET_PROTOTYPE_METHOD(t, "consistencyLevel", GetOrSetConsistencyLevel);
 
-    // Cassandra.prototype.clusterName 
+    // properties
+    // Client.prototype.clusterName (read only)
     t->PrototypeTemplate()->SetAccessor(String::NewSymbol("clusterName"), ClusterNameGetter);
-    // Cassandra.prototype.version 
+    // Client.prototype.version (read only)
     t->PrototypeTemplate()->SetAccessor(String::NewSymbol("version"), VersionGetter);
 
     // var cassandra = require('cassandra');
@@ -52,10 +148,14 @@ void Client::Initialize(Handle<Object> target)
 
     // ConsistencyLevel
     ConsistencyLevel level;
-
     Local<ObjectTemplate> cl = ObjectTemplate::New();
-    cl->SetInternalFieldCount(1);
+    cl->SetInternalFieldCount(0);
     cl->Set(String::NewSymbol("ONE"), Integer::New(level.ONE));
+    cl->Set(String::NewSymbol("QUORUM"), Integer::New(level.QUORUM));
+    cl->Set(String::NewSymbol("LOCAL_QUORUM"), Integer::New(level.LOCAL_QUORUM));
+    cl->Set(String::NewSymbol("EACH_QUORUM"), Integer::New(level.EACH_QUORUM));
+    cl->Set(String::NewSymbol("ALL"), Integer::New(level.ALL));
+    cl->Set(String::NewSymbol("ANY"), Integer::New(level.ANY));
     target->Set(String::NewSymbol("ConsistencyLevel"), cl->NewInstance());
 }
 
@@ -69,16 +169,14 @@ void Client::Initialize(Handle<Object> target)
 Handle<Value> Client::New(const Arguments& args)
 {
     HandleScope scope;
-    Client *client;
 
-    String::Utf8Value keyspace(args[0]);
+    string keyspace;
+    value2string(keyspace, args[0]);
 
-    Handle<Value> hosts(args[1]);
-    if (hosts->IsArray()) {
-    } else {
-        String::AsciiValue host(hosts->ToString());
-        client = new Client(*keyspace, *host);
-    }
+    string host;
+    value2string(host, args[1]);
+
+    Client *client = new Client(keyspace, host);
     client->Wrap(args.This());
 
     return args.This();
@@ -93,13 +191,14 @@ Handle<Value> Client::Login(const Arguments& args)
     HandleScope scope;
     Client *client = ObjectWrap::Unwrap<Client>(args.This());
 
-    String::Utf8Value username(args[0]);
-    String::Utf8Value password(args[1]);
-    try {
-        client->login(*username, *password);
-    } catch (AuthenticationException e) {
-    } catch (AuthorizationException e) {
-    }
+    string username;
+    value2string(username, args[0]);
+
+    string password;
+    value2string(password, args[1]);
+
+    client->login(username, password);
+
     return Undefined();
 }
 
@@ -121,6 +220,37 @@ Handle<Value> Client::VersionGetter(Local<String> property, const AccessorInfo& 
     HandleScope scope;
     Client *client = ObjectWrap::Unwrap<Client>(info.This());
     return scope.Close(String::New(client->describe_version().c_str()));
+}
+
+/**
+ * Client.protorype.consistencyLevel
+ */
+Handle<Value> Client::GetOrSetConsistencyLevel(const Arguments& args)
+{
+    HandleScope scope;
+    Client *client = ObjectWrap::Unwrap<Client>(args.This());
+
+    // 
+    if (args.Length() > 0)
+    {
+        Local<Object> obj = args[0]->ToObject();
+        client->setDefaultReadConsistencyLevel(
+            ConsistencyLevel::type(
+              obj->Get(String::NewSymbol("read"))->IntegerValue()));
+        client->setDefaultWriteConsistencyLevel(
+            ConsistencyLevel::type(
+              obj->Get(String::NewSymbol("write"))->IntegerValue()));
+    }
+
+    Local<ObjectTemplate> ret_templ = ObjectTemplate::New();
+    ret_templ->SetInternalFieldCount(0);
+    ret_templ->Set(
+        String::NewSymbol("read"),
+        Number::New(client->getDefaultReadConsistencyLevel()));
+    ret_templ->Set(
+        String::NewSymbol("write"),
+        Number::New(client->getDefaultWriteConsistencyLevel()));
+    return scope.Close(ret_templ->NewInstance());
 }
 
 /**
@@ -171,30 +301,67 @@ Handle<Value> Client::MultiCount(const Arguments& args)
         Local<Array> key_array = Local<Array>::Cast(keys);
         for (int i = 0, max = key_array->Length(); i < max; i++)
         {
-            String::Utf8Value key(key_array->Get(i));
-            _keys.push_back(*key);
+            string key;
+            value2string(key, key_array->Get(i));
+            _keys.push_back(key);
         }
     }
     else
     {
         // single key
-        String::Utf8Value key(keys);
-        _keys.push_back(*key);
+        string key;
+        value2string(key, keys);
+        _keys.push_back(key);
     }
 
-    if (args.Length() > 3)
+    string super_column_name;
+    vector<string> column_names;
+    map<string, string> options;
+    int index = 2;
+    // 3rd arg may be super column name or columns array
+    if (args.Length() > index)
     {
-        // super_column -> column
-    }
-    else if (args.Length() > 2)
-    {
-    }
+        // super column name
+        Local<Value> maybeSuperColumn(args[index]);
+        if (maybeSuperColumn->IsString())
+        {
+            value2string(super_column_name, maybeSuperColumn);
+            ++index;
+        }
 
+        // columns
+        Local<Value> maybeColumns(args[index]);
+        if (maybeColumns->IsArray())
+        {
+            Local<Array> columns = Local<Array>::Cast(maybeColumns);
+            for (int i = 0, max = columns->Length(); i < max; i++)
+            {
+                string col_name;
+                value2string(col_name, columns->Get(i));
+                column_names.push_back(col_name);
+            }
+            ++index;
+        }
+
+        // options
+        Local<Value> maybeOptions(args[index]);
+        if (maybeOptions->IsObject())
+        {
+            Local<Object> opts = maybeOptions->ToObject();
+            makeOptions(options, opts);
+        }
+    }
+ 
     // execute query
     map<string, int32_t> result;
     try
     {
-        result = client->multiget_count(_keys, *column_family, "");
+        result = client->multiget_count(
+            _keys,
+            *column_family,
+            super_column_name,
+            column_names,
+            options);
     }
     catch (NotFoundException e)
     {
@@ -208,7 +375,7 @@ Handle<Value> Client::MultiCount(const Arguments& args)
     }
 
     // construct return value
-    Handle<ObjectTemplate> data_templ = ObjectTemplate::New();
+    Local<ObjectTemplate> data_templ = ObjectTemplate::New();
     data_templ->SetInternalFieldCount(0);
 
     map<string, int32_t>::iterator it = result.begin();
@@ -245,30 +412,67 @@ Handle<Value> Client::MultiGet(const Arguments& args)
         Local<Array> key_array = Local<Array>::Cast(keys);
         for (int i = 0, max = key_array->Length(); i < max; i++)
         {
-            String::Utf8Value key(key_array->Get(i));
-            _keys.push_back(*key);
+            string key;
+            value2string(key, key_array->Get(i));
+            _keys.push_back(key);
         }
     }
     else
     {
         // single key
-        String::Utf8Value key(keys);
-        _keys.push_back(*key);
+        string key;
+        value2string(key, keys);
+        _keys.push_back(key);
     }
 
-    if (args.Length() > 3)
+    string super_column_name;
+    vector<string> column_names;
+    map<string, string> options;
+    int index = 2;
+    // 3rd arg may be super column name or columns array
+    if (args.Length() > index)
     {
-        // super_column -> column
-    }
-    else if (args.Length() > 2)
-    {
+        // super column name
+        Local<Value> maybeSuperColumn(args[index]);
+        if (maybeSuperColumn->IsString())
+        {
+            value2string(super_column_name, maybeSuperColumn);
+            ++index;
+        }
+
+        // columns
+        Local<Value> maybeColumns(args[index]);
+        if (maybeColumns->IsArray())
+        {
+            Local<Array> columns = Local<Array>::Cast(maybeColumns);
+            for (int i = 0, max = columns->Length(); i < max; i++)
+            {
+                string col_name;
+                value2string(col_name, columns->Get(i));
+                column_names.push_back(col_name);
+            }
+            ++index;
+        }
+
+        // options
+        Local<Value> maybeOptions(args[index]);
+        if (maybeOptions->IsObject())
+        {
+            Local<Object> opts = maybeOptions->ToObject();
+            makeOptions(options, opts);
+        }
     }
 
     // execute query
     map<string, vector<ColumnOrSuperColumn> > result;
     try
     {
-        result = client->multiget_slice(_keys, *column_family, "");
+        result = client->multiget_slice(
+            _keys,
+            *column_family,
+            super_column_name,
+            column_names,
+            options);
     }
     catch (NotFoundException e)
     {
@@ -369,8 +573,7 @@ Handle<Value> Client::Insert(const Arguments& args)
                 String::Utf8Value column_name(propVals->Get(j));
                 String::Utf8Value value(propValue->ToObject()->Get(propVals->Get(j)));
 
-                Column col = client->createColumn(*column_name, *value);
-
+                Column col = createColumn(*column_name, *value);
                 sc.columns.push_back(col);
             }
 
@@ -381,7 +584,7 @@ Handle<Value> Client::Insert(const Arguments& args)
         {
             // standard column
             String::Utf8Value value(propValue);
-            Column col = client->createColumn(*propName, *value);
+            Column col = createColumn(*propName, *value);
 
             cosc.column = col;
             cosc.__isset.column = true;
@@ -506,15 +709,14 @@ Client::Client(const string &keyspace, const string &hosts, bool framed_transpor
     transport->open();
 
     ConsistencyLevel level;
-    default_cl_ = level.ONE;
+    default_write_cl_ = level.QUORUM;
+    default_read_cl_ = level.QUORUM;
 
     thrift_client_->set_keyspace(keyspace);
     thrift_client_->describe_cluster_name(cluster_name_);
     thrift_client_->describe_version(version_);
 
     keyspace_.assign(keyspace);
-
-    discover_nodes();
 }
 
 Client::~Client()
@@ -551,6 +753,26 @@ vector<TokenRange> Client::describe_ring()
     return range;
 }
 
+void Client::setDefaultWriteConsistencyLevel(ConsistencyLevel::type level)
+{
+    default_write_cl_ = level;
+}
+
+ConsistencyLevel::type Client::getDefaultWriteConsistencyLevel()
+{
+    return default_write_cl_;
+}
+
+void Client::setDefaultReadConsistencyLevel(ConsistencyLevel::type level)
+{
+    default_read_cl_ = level;
+}
+
+ConsistencyLevel::type Client::getDefaultReadConsistencyLevel()
+{
+    return default_read_cl_;
+}
+
 void Client::discover_nodes()
 {
     vector<TokenRange> range = describe_ring();
@@ -564,7 +786,6 @@ void Client::discover_nodes()
             servers_.insert(*endpoints_it);
             endpoints_it++;
         }
-
         range_it++;
     }
 }
@@ -578,55 +799,49 @@ void Client::login(const string &user, const string &password)
     thrift_client_->login(auth);
 }
 
-map<string, vector<ColumnOrSuperColumn> > Client::multiget_slice(const vector<string> &keys, const string &column_family, const string &super_column_name)
+map<string, vector<ColumnOrSuperColumn> > Client::multiget_slice(
+    const vector<string> &keys,
+    const string &column_family,
+    const string &super_column_name,
+    const vector<string> &columns,
+    const map<string, string> &options)
 {
     // construct column parent
-    ColumnParent cp;
-    cp.column_family.assign(column_family);
-    if (!super_column_name.empty()) 
-    {
-        cp.super_column.assign(super_column_name);
-        cp.__isset.super_column= true;
-    }
+    ColumnParent cp = createColumnParent(column_family, super_column_name);
 
     // construct slice predicate
-    SlicePredicate sp;
-    sp.slice_range.start = "";
-    sp.slice_range.finish = "";
-    sp.__isset.slice_range = true;
+    SlicePredicate sp = createSlicePredicate(columns, options);
+    
+    // consistency level
 
     map<string, vector<ColumnOrSuperColumn> > ret;
-    thrift_client_->multiget_slice(ret, keys, cp, sp, default_cl_);
+    thrift_client_->multiget_slice(ret, keys, cp, sp, default_read_cl_);
 
     return ret;
 }
 
-map<string, int32_t> Client::multiget_count(const vector<string> &keys, const string &column_family, const string &super_column_name)
+map<string, int32_t> Client::multiget_count(
+    const vector<string> &keys,
+    const string &column_family,
+    const string &super_column_name,
+    const vector<string> &columns,
+    const map<string, string> &options)
 {
     // construct column parent
-    ColumnParent cp;
-    cp.column_family.assign(column_family);
-    if (!super_column_name.empty()) 
-    {
-        cp.super_column.assign(super_column_name);
-        cp.__isset.super_column= true;
-    }
+    ColumnParent cp = createColumnParent(column_family, super_column_name);
 
     // construct slice predicate
-    SlicePredicate sp;
-    sp.slice_range.start = "";
-    sp.slice_range.finish = "";
-    sp.__isset.slice_range = true;
+    SlicePredicate sp = createSlicePredicate(columns, options);
 
     map<string, int32_t> result;
-    thrift_client_->multiget_count(result, keys, cp, sp, default_cl_);
+    thrift_client_->multiget_count(result, keys, cp, sp, default_read_cl_);
 
     return result;
 }
 
 void Client::batch_mutate(const map<string, map<string, vector<Mutation> > > &mutation_map)
 {
-    thrift_client_->batch_mutate(mutation_map, default_cl_);
+    thrift_client_->batch_mutate(mutation_map, default_write_cl_);
 }
 
 extern "C"

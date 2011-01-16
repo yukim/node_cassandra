@@ -14,6 +14,9 @@ using namespace org::apache::cassandra;
 class Timestamp
 {
     public:
+        /**
+         * returns int64_t type timestamp for current time
+         */
         static int64_t Now()
         {
             struct timeval tv;
@@ -34,6 +37,7 @@ class Client : public node::ObjectWrap
         static v8::Handle<v8::Value> VersionGetter(v8::Local<v8::String> property, const v8::AccessorInfo& info);
 
         static v8::Handle<v8::Value> Login(const v8::Arguments& args);
+        static v8::Handle<v8::Value> GetOrSetConsistencyLevel(const v8::Arguments& args);
         static v8::Handle<v8::Value> Get(const v8::Arguments& args);
         static v8::Handle<v8::Value> Count(const v8::Arguments& args);
         static v8::Handle<v8::Value> MultiGet(const v8::Arguments& args);
@@ -46,8 +50,18 @@ class Client : public node::ObjectWrap
 
         void login(const std::string &user, const std::string &password);
 
-        std::map<std::string, std::vector<ColumnOrSuperColumn> > multiget_slice(const std::vector<std::string> &keys, const std::string &column_family, const std::string &super_column_name);
-        std::map<std::string, int32_t> multiget_count(const std::vector<std::string> &keys, const std::string &column_family, const std::string &super_column_name);
+        std::map<std::string, std::vector<ColumnOrSuperColumn> > multiget_slice(
+            const std::vector<std::string> &keys,
+            const std::string &column_family,
+            const std::string &super_column_name,
+            const std::vector<std::string> &columns,
+            const std::map<std::string, std::string> &options);
+        std::map<std::string, int32_t> multiget_count(
+            const std::vector<std::string> &keys,
+            const std::string &column_family,
+            const std::string &super_column_name,
+            const std::vector<std::string> &columns,
+            const std::map<std::string, std::string> &options);
         //std::vector<KeySlice> get_range_slices(const std::string &column_family, const std::string &super_column_name, const SlicePredicate& predicate, const KeyRange& range);
         //std::vector<KeySlice> get_indexed_slices(const std::string &column_family, const std::string &super_column_name, const IndexClause& index_clause, const SlicePredicate& column_predicate);
 
@@ -57,33 +71,20 @@ class Client : public node::ObjectWrap
         std::string describe_version();
         std::vector<KsDef> describe_keyspaces();
         std::vector<TokenRange> describe_ring();
-        /**
-        KeDef describe_keyspace(const std::string& keyspace);
-        std::string describe_partitioner();
-        std::vector<std::string> describe_splits(const std::string& cfName, const std::string& start_token, const std::string& end_token, const int32_t keys_per_split);
-        std::map<std::string, std::vector<std::string> > describe_schema_versions();
-        std::string describe_snitch();
-        **/
+        // KeDef describe_keyspace(const std::string& keyspace);
+        // std::string describe_partitioner();
+        // std::vector<std::string> describe_splits(const std::string& cfName, const std::string& start_token, const std::string& end_token, const int32_t keys_per_split);
+        // std::map<std::string, std::vector<std::string> > describe_schema_versions();
+        // std::string describe_snitch();
 
-        /*
-        Mutation createInsertMutation(const std::string &umn_, const std::string &value)
-        {
-        }*/
+        void setDefaultWriteConsistencyLevel(ConsistencyLevel::type level);
+        ConsistencyLevel::type getDefaultWriteConsistencyLevel();
 
-        Column createColumn(const std::string &name, const std::string &value)
-        {
-            Column col;
-            col.name = name;
-            col.value = value;
-            col.timestamp = Timestamp::Now();
-
-            return col;
-        }
+        void setDefaultReadConsistencyLevel(ConsistencyLevel::type level);
+        ConsistencyLevel::type getDefaultReadConsistencyLevel();
 
     private:
         void discover_nodes();
-
-        bool is_super(const std::string &cf_name);
 
         std::string keyspace_;
         std::string cluster_name_;
@@ -91,7 +92,7 @@ class Client : public node::ObjectWrap
         std::set<std::string> servers_;
 
         // default write consistency level
-        ConsistencyLevel::type default_cl_;
+        ConsistencyLevel::type default_write_cl_;
 
         // default read consistency level
         ConsistencyLevel::type default_read_cl_;
