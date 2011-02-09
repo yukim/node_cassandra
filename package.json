@@ -3,6 +3,9 @@
   "description": "cassandra client for node.js",
   "version": "0.0.1",
   "author": "Yuki Morishita <mor.yuki@gmail.com>",
-  "main": "./build/default/cassandra",
-  "engines": { "node": ">= 0.2.1" },
+  "main": "./cassandra",
+  "dependencies" : {
+    "thrift": *
+  },
+  "engines": { "node": ">= 0.2.1" }
 }
