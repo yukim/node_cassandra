@@ -1,11 +1,11 @@
 {
   "name": "cassandra",
   "description": "cassandra client for node.js",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "author": "Yuki Morishita <mor.yuki@gmail.com>",
   "main": "./cassandra",
   "dependencies" : {
     "thrift": *
   },
-  "engines": { "node": ">= 0.2.1" }
+  "engines": { "node": ">= 0.3" }
 }
