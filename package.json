@@ -3,9 +3,10 @@
   "description": "cassandra client for node.js",
   "version": "0.1.0",
   "author": "Yuki Morishita <mor.yuki@gmail.com>",
-  "main": "./cassandra",
+  "main": "./lib/cassandra",
+  "lib" : "gen-nodejs",
   "dependencies" : {
-    "thrift": *
+    "thrift": "*"
   },
   "engines": { "node": ">= 0.3" }
 }
