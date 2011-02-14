@@ -7,16 +7,16 @@
  * cassandra-cli --host localhost --batch < test.ddl
  */
 var assert = require('assert'),
-    cassandra = require('../cassandra');
+    cassandra = require('cassandra');
 
 // number of tests
-
-// connect to cassandra
-var client = new cassandra.Client('127.0.0.1:9160');
 
 module.exports = {
 
   'test if ConsistencyLevel is exported properly': function() {
+    // connect to cassandra
+    var client = new cassandra.Client('127.0.0.1:9160');
+
     // make sure all consistency levels are exported
     var CL = cassandra.ConsistencyLevel;
     assert.deepEqual(CL, {
@@ -47,15 +47,45 @@ module.exports = {
     });
   },
 
+  'test if client emits error when connection failed': function() {
+    // wrong port
+    var client = new cassandra.Client('127.0.0.1:9161');
+    client.on('error', function(err) {
+      assert.isNotNull(err);
+    });
+    client.connect('node_cassandra_test');
+  },
+
+  'test connecting keyspace that does not exist throws error': function() {
+    // connect to cassandra
+    var client = new cassandra.Client('127.0.0.1:9160');
+    client.on('error', function(err) {
+      assert.isNotNull(err);
+    });
+    client.connect('NonExistKeySpace');
+  },
+
+  'test if accessing ColumnFamily that does not exist throws error': function() {
+    // connect to cassandra
+    var client = new cassandra.Client('127.0.0.1:9160');
+    client.on('error', function(err) {
+      assert.isNotNull(err);
+      assert.equal(err.message, 'Column Family NotExistCF does not exist.');
+      client.close();
+    });
+    client.connect('node_cassandra_test');
+    client.getColumnFamily('NotExistCF');
+  },
+
   'test if operations on client works properly': function(beforeExit) {
+    // connect to cassandra
+    var client = new cassandra.Client('127.0.0.1:9160');
     client.connect('node_cassandra_test');
     // or login if needed
     //client.connect('node_cassandra_test', {username: 'foo', password: 'bar'});
 
-    var standard, superCF, notExistCF;
-    standard = client.getColumnFamily('Standard');
-    superCF = client.getColumnFamily('Super');
-    //notExistCF = client.getColumnFamily('NotExistCF');
+    var standard = client.getColumnFamily('Standard');
+    var superCF = client.getColumnFamily('Super');
 
     //-------------------------------------
     // set
@@ -212,6 +242,14 @@ module.exports = {
       });
     });
 
+    superCF.get('edgar', {linit: 1}, function(err, res) {
+      assert.equal(err, null);
+      assert.deepEqual(res, {
+        address:
+      {city: 'Madison', state: 'WI'}
+      });
+    });
+
     superCF.get('edgar', 'address', function(err, res) {
       assert.equal(err, null);
       assert.deepEqual(res, {
@@ -227,12 +265,18 @@ module.exports = {
         city: 'Madison'
       });
     });
-    // TODO clarify
-    superCF.get('edgar', 'address', {reversed: true, limit: 1}, function(err, res) {
+    // get only one column for certain key
+    superCF.get('edgar', 'address', 'state', function(err, res) {
       assert.equal(err, null);
       assert.deepEqual(res, {
-        city: 'Madison',
         state: 'WI'
+      });
+    });
+
+    superCF.get('edgar', 'address', {start: '', finish: 'city'}, function(err, res) {
+      assert.equal(err, null);
+      assert.deepEqual(res, {
+        city: 'Madison'
       });
     });
 
@@ -273,9 +317,9 @@ module.exports = {
     superCF.get('edgar', function(err, res) {
       assert.equal(err, null);
       assert.deepEqual(res, {});
-    });
 
-    // close connection before exit
-    beforeExit(function() { client.close(); });
+    });
+    // close 
+    setTimeout(function(){client.close();}, 3000);
   }
 };
