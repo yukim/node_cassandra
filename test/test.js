@@ -19,32 +19,32 @@ module.exports = {
 
     // make sure all consistency levels are exported
     var CL = cassandra.ConsistencyLevel;
-    assert.deepEqual(CL, {
+    assert.deepEqual({
       ONE: 1,
       QUORUM: 2,
       LOCAL_QUORUM: 3,
       EACH_QUORUM: 4,
       ALL: 5,
       ANY: 6
-    });
+    }, CL);
 
     // client configuration
     // consistency level
     // default is CL.QUORUM for both reads and writes
-    assert.deepEqual(client.consistencyLevel(), {
+    assert.deepEqual({
       write: CL.QUORUM,
       read: CL.QUORUM
-    });
+    }, client.consistencyLevel());
     // let's change default
     client.consistencyLevel({
       write: CL.ONE,
       read: CL.ONE
     });
     // and check
-    assert.deepEqual(client.consistencyLevel(), {
+    assert.deepEqual({
       write: CL.ONE,
       read: CL.ONE
-    });
+    }, client.consistencyLevel());
   },
 
   'test if client emits error when connection failed': function() {
@@ -52,6 +52,7 @@ module.exports = {
     var client = new cassandra.Client('127.0.0.1:9161');
     client.on('error', function(err) {
       assert.isNotNull(err);
+      client.close();
     });
     client.connect('node_cassandra_test');
   },
@@ -61,6 +62,7 @@ module.exports = {
     var client = new cassandra.Client('127.0.0.1:9160');
     client.on('error', function(err) {
       assert.isNotNull(err);
+      client.close();
     });
     client.connect('NonExistKeySpace');
   },
@@ -76,6 +78,28 @@ module.exports = {
     client.connect('node_cassandra_test');
     client.getColumnFamily('NotExistCF');
   },
+
+  /*
+  'test if truncate works': function() {
+    // connect to cassandra
+    var client = new cassandra.Client('127.0.0.1:9160');
+    client.on('error', function(err) {
+      assert.fail(err.message);
+    });
+    client.connect('node_cassandra_test');
+    var standard = client.getColumnFamily('Standard');
+    standard.set('test', { foo: 123 }, function(err) {
+      assert.isNull(err);
+      standard.truncate(function(err) {
+        assert.isNull(err);
+        standard.get('test', function(err, res) {
+          assert.isNull(err);
+          client.close();
+        });
+      });
+    });
+  },
+  */
 
   'test if operations on client works properly': function(beforeExit) {
     // connect to cassandra
@@ -96,34 +120,25 @@ module.exports = {
       last_name: 'Dahl',
       age: 24
     }, function(err) {
-      assert.equal(err, null);
+      assert.isNull(err);
     });
 
     // make sure it is seted.
     standard.get('todd', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
-        id: '1',
+      assert.isNull(err);
+      assert.deepEqual({
+        id: 1,
         first_name: 'Todd',
         last_name: 'Dahl',
-        age: '24',
-      });
+        age: 24,
+      }, res);
     });
-    // note that even though you set Number,
-    // cassandra returns in String.
 
     // if you query for the key that doesn't exist, you will get empty object.
     standard.get('notexist', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {});
+      assert.isNull(err);
+      assert.deepEqual({}, res);
     });
-    /**
-      notExistCF.get('notexist', function(err, res) {
-      console.dir(err);
-      assert.equal(res, null);
-      });
-      */
-
     // see if multiget works as expected.
     standard.set('jesse', {
       id: 2,
@@ -132,20 +147,20 @@ module.exports = {
     });
 
     standard.get(['todd', 'jesse'], function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         todd: {
-                id: '1',
-        first_name: 'Todd',
-        last_name: 'Dahl',
-        age: '24',
-              },
+          id: '1',
+          first_name: 'Todd',
+          last_name: 'Dahl',
+          age: '24',
+        },
         jesse: {
-                 id: '2',
-        first_name: 'Jesse',
-        last_name: 'Pitman'
-               }
-      });
+          id: '2',
+          first_name: 'Jesse',
+          last_name: 'Pitman'
+        }
+      }, res);
     });
 
     // read operation with options.
@@ -160,166 +175,150 @@ module.exports = {
     //
     // specifying column names
     standard.get('todd', ['id', 'age'], function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         id: '1',
         age: '24',
-      });
+      }, res);
     });
-    /*
-    // specifying column names and CL
-    var selected_result_with_cl_any = client.get('Standard', 'todd',
-    ['id', 'age'],
-    {consistency_level: CL.ANY});
-    assert.deepEqual(selected_result_with_cl_any, {
-    id: '1',
-    age: '24',
-    });
-    */
     // count scan
     standard.get('todd', {count: 1}, function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         age: '24',
-      });
+      }, res);
     });
     // range scan
     standard.get('todd', {start: '', finish: 'age'}, function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         age: '24',
-      });
+      }, res);
     });
-    // modifying consistency level not yet supported
-    //client.set('Standard', 'jesse', {
-    //  id: 2,
-    //  first_name: 'Jesse',
-    //  last_name: 'Pitman'
-    //}, {
-    //  consistency_level: CL.ALL
-    //});
-
-    // TTL is not supported yet.
-    //client.set('Standard', 'foo', {
-    //  bar: 'baz'
-    //}, {
-    //  ttl: 1000
-    //});
 
     // counting
     // let's count number of cols
     standard.count('todd', function(err, res) {
-      assert.equal(err, null);
+      assert.isNull(err);
       assert.equal(4, res);
     });
 
     // you can count colmns of multiple keys
     standard.count(['todd', 'jesse'], function(err, res){
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         todd: 4,
         jesse: 3
-      });
+      }, res);
     });
 
     // super column
     superCF.set('edgar', {
-      name:
-    {first_name: 'Edgar', last_name: 'Sawyers'},
-      address:
-    {city: 'Madison', state: 'WI'}
+      name: {
+        first_name: 'Edgar',
+        last_name: 'Sawyers'
+      },
+      address: {
+        city: 'Madison',
+        state: 'WI'
+      }
     }, function(err) {
-      assert.equal(err, null);
+      assert.isNull(err);
     });
 
     superCF.get('edgar', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
-        name:
-      {first_name: 'Edgar', last_name: 'Sawyers'},
-        address:
-      {city: 'Madison', state: 'WI'}
-      });
+      assert.isNull(err);
+      assert.deepEqual({
+        name: {
+          first_name: 'Edgar',
+          last_name: 'Sawyers'
+        },
+        address: {
+          city: 'Madison',
+          state: 'WI'
+        }
+      }, res);
     });
 
-    superCF.get('edgar', {linit: 1}, function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
-        address:
-      {city: 'Madison', state: 'WI'}
-      });
+    superCF.get('edgar', {count: 1}, function(err, res) {
+      assert.isNull(err);
+      assert.deepEqual({
+        address: {
+          city: 'Madison',
+          state: 'WI'
+        }
+      }, res);
     });
 
     superCF.get('edgar', 'address', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         city: 'Madison',
         state: 'WI'
-      });
+      }, res);
     });
 
     // get only one column for certain key
     superCF.get('edgar', 'address', ['city'], function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         city: 'Madison'
-      });
+      }, res);
     });
     // get only one column for certain key
     superCF.get('edgar', 'address', 'state', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         state: 'WI'
-      });
+      }, res);
     });
 
     superCF.get('edgar', 'address', {start: '', finish: 'city'}, function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         city: 'Madison'
-      });
+      }, res);
     });
 
     // remove
     standard.remove('todd', 'id', function(err) {
-      assert.equal(err, null);
+      assert.isNull(err);
     });
+
     standard.get('todd', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         first_name: 'Todd',
         last_name: 'Dahl',
         age: '24',
-      });
+      }, res);
     });
-
     standard.remove('todd', ['first_name', 'last_name']);
     standard.get('todd', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {
+      assert.isNull(err);
+      assert.deepEqual({
         age: '24',
-      });
+      }, res);
     });
 
     standard.remove('todd');
     standard.get('todd', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {});
+      assert.isNull(err);
+      assert.deepEqual({}, res);
     });
 
     standard.remove('jesse');
     standard.get('jesse', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {});
+      assert.isNull(err);
+      assert.deepEqual({}, res);
     });
 
     superCF.remove('edgar');
     superCF.get('edgar', function(err, res) {
-      assert.equal(err, null);
-      assert.deepEqual(res, {});
+      assert.isNull(err);
+      assert.deepEqual({}, res);
 
+      client.close();
     });
-    // close 
-    setTimeout(function(){client.close();}, 3000);
   }
 };
