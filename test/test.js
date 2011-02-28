@@ -47,16 +47,6 @@ module.exports = {
     }, client.consistencyLevel());
   },
 
-  'test if client emits error when connection failed': function() {
-    // wrong port
-    var client = new cassandra.Client('127.0.0.1:9161');
-    client.on('error', function(err) {
-      assert.isNotNull(err);
-      client.close();
-    });
-    client.connect('node_cassandra_test');
-  },
-
   'test connecting keyspace that does not exist throws error': function() {
     // connect to cassandra
     var client = new cassandra.Client('127.0.0.1:9160');
