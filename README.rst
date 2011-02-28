@@ -3,31 +3,23 @@ About
 ---------
 
 node_cassandra is node.js addon for Apache Cassandra(http://cassandra.apache.org).
-
-node_cassandra wraps thrift c++ client with nice javascript API.
-
-Currently, only cassandra 0.7 is supported.
+node_cassandra originally used C++ thrift client, but thanks to node.js support in Thrift ver 0.6, current version uses only javascript.
+Currently, only cassandra 0.7.x is supported.
 
 Requirement
 -------------
 
-To install and run, you need to have thrift 0.5.0 installed.
+node-thrift, but if you install node_cassandra with npm, it should be installed as well.
 
-Install
----------
+Installation
+--------------
 
-$ git clone https://yukim@github.com/yukim/node_cassandra.git
-$ cd node_cassandra
+  $ npm install cassandra
 
-then,
+of
 
-$ node-waf configure install
-
-or
-
-$ npm install .
-
-I will push to npm repo later.
+  $ git clone https://yukim@github.com/yukim/node_cassandra.git
+  $ npm install .
 
 Usage
 ---------
@@ -39,14 +31,26 @@ Example usage::
   var CL = cassandra.ConsistencyLevel;
 
   client.consistencyLevel({
-    write: CL.ONE, read: CL.ONE
+    write: CL.ONE,
+    read: CL.ONE
   });
 
-  client.insert("ColumnFamily", "key", {foo: "bar"});
+  client.connect("SomeKeySpace");
+  var cf = client.getColumnFamily("SomeColumnFamily");
 
-  var data = client.get("ColumnFamily", "key");
+  var data = cf.get("key", function(err, data) {
+    // play with data
+    console.log(data.columnName);
+  });
 
 For more detailed example, see test/test.js.
+
+Test
+--------
+
+If you have expresso installed, you can run test with::
+
+  $ expresso -I lib
 
 Limitation
 ------------
@@ -55,5 +59,9 @@ Following APIs are not yet supported.
 
 * get_range_slice
 * get_index_slice
-* truncate
 * system_* (schema modification APIs)
+
+License
+-----------
+
+Apache 2.0 License
