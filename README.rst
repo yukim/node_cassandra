@@ -27,8 +27,8 @@ Usage
 
 Example usage::
 
-  var cassandra = require('cassandra');
-  var client = new cassandra.Client("Keyspace", "host:port");
+  var cassandra = require("cassandra");
+  var client = new cassandra.Client("host:port");
   var CL = cassandra.ConsistencyLevel;
 
   client.consistencyLevel({
