@@ -18,7 +18,8 @@ Installation
 
 of
 
-  $ git clone https://yukim@github.com/yukim/node_cassandra.git
+  $ git clone https://github.com/yukim/node_cassandra.git
+
   $ npm install .
 
 Usage
