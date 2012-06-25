@@ -1,3 +1,5 @@
+**THIS PACKAGE IS NOT MAINTAINED ANY MORE. PLEASE USE https://github.com/simplereach/helenus OR https://github.com/racker/node-cassandra-client INSTEAD.**
+
 
 About
 ---------
