@@ -11,12 +11,13 @@ var assert = require('assert'),
 
 // number of tests
 
+var log = console.log;
+
 module.exports = {
 
   'test if ConsistencyLevel is exported properly': function() {
     // connect to cassandra
     var client = new cassandra.Client('127.0.0.1:9160');
-
     // make sure all consistency levels are exported
     var CL = cassandra.ConsistencyLevel;
     assert.deepEqual({
@@ -47,18 +48,23 @@ module.exports = {
     }, client.consistencyLevel());
   },
 
-  'test connecting keyspace that does not exist throws error': function() {
+  'test connecting keyspace that does not exist throws error': function(beforeExit) {
     // connect to cassandra
     var client = new cassandra.Client('127.0.0.1:9160');
+    var lerr;
     client.on('error', function(err) {
-      assert.isNotNull(err);
-      client.close();
+      lerr = err;
     });
     client.connect('NonExistKeySpace');
+    beforeExit(function() {
+      assert.isNotNull(lerr);
+      client.close();
+    });
   },
 
   'test if accessing ColumnFamily that does not exist throws error': function() {
     // connect to cassandra
+
     var client = new cassandra.Client('127.0.0.1:9160');
     client.on('error', function(err) {
       assert.isNotNull(err);
@@ -67,6 +73,7 @@ module.exports = {
     });
     client.connect('node_cassandra_test');
     client.getColumnFamily('NotExistCF');
+    client.connect('node_cassandra_test');
   },
 
   /*
@@ -88,16 +95,37 @@ module.exports = {
         });
       });
     });
-  },
+  ,
   */
+  'test ready signal on connect': function(beforeExit) {
+    var client = new cassandra.Client('127.0.0.1:9160');
+    var standard = client.getColumnFamily('Standard');
+    var cf_ready = false;
+    standard.on("ready", function(cf) { cf_ready = true; });
+    var got_ready = false;
+    client.connect('node_cassandra_test');
+    var superCF = client.getColumnFamily('Super');
+    client.on('ready', function() {
+        got_ready = true;
+    })
+    beforeExit(function() {
+        assert.ok(got_ready, "ready signal not fired");
+        assert.ok(standard.ready, "ready on standard not set");
+        assert.ok(superCF.ready, "ready on super not set");
+        assert.ok(cf_ready, "columnfamily did not send ready");
+        client.close();
+    });
 
-  'test if operations on client works properly': function(beforeExit) {
+  },
+  'test if operations on client works properly': function() {
     // connect to cassandra
     var client = new cassandra.Client('127.0.0.1:9160');
+    client.on('error', function(err) {
+        log("got error", err);
+    })
     client.connect('node_cassandra_test');
     // or login if needed
     //client.connect('node_cassandra_test', {username: 'foo', password: 'bar'});
-
     var standard = client.getColumnFamily('Standard');
     var superCF = client.getColumnFamily('Super');
 
@@ -112,7 +140,6 @@ module.exports = {
     }, function(err) {
       assert.isNull(err);
     });
-
     // make sure it is seted.
     standard.get('todd', function(err, res) {
       assert.isNull(err);
@@ -123,7 +150,6 @@ module.exports = {
         age: 24,
       }, res);
     });
-
     // if you query for the key that doesn't exist, you will get empty object.
     standard.get('notexist', function(err, res) {
       assert.isNull(err);
@@ -135,7 +161,6 @@ module.exports = {
       first_name: 'Jesse',
       last_name: 'Pitman'
     });
-
     standard.get(['todd', 'jesse'], function(err, res) {
       assert.isNull(err);
       assert.deepEqual({
@@ -152,7 +177,6 @@ module.exports = {
         }
       }, res);
     });
-
     // read operation with options.
     // valid options are:
     //   start: SliceRange start
@@ -185,7 +209,6 @@ module.exports = {
         age: '24',
       }, res);
     });
-
     // counting
     // let's count number of cols
     standard.count('todd', function(err, res) {
@@ -269,7 +292,6 @@ module.exports = {
         city: 'Madison'
       }, res);
     });
-
     // remove
     standard.remove('todd', 'id', function(err) {
       assert.isNull(err);
@@ -302,7 +324,6 @@ module.exports = {
       assert.isNull(err);
       assert.deepEqual({}, res);
     });
-
     superCF.remove('edgar');
     superCF.get('edgar', function(err, res) {
       assert.isNull(err);
